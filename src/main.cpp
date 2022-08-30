@@ -131,6 +131,7 @@ void AdjustPlayerBeam() {
 							pick.GetAllCollectorRayHitAt(0, res);
 							NiPoint3 laserNormal = Normalize(res.normal);
 							NiPoint3 laserPos = res.position / *ptr_fBS2HkScale + laserNormal * 2.f;
+							float actorScale = GetActorScale(p);
 							//_MESSAGE("autoaim %f %f %f", p->bulletAutoAim.x, p->bulletAutoAim.y, p->bulletAutoAim.z);
 							//_MESSAGE("laserPos %f %f %f", laserPos.x, laserPos.y, laserPos.z);
 							//_MESSAGE("laserNormal %f %f %f", laserNormal.x, laserNormal.y, laserNormal.z);
@@ -149,6 +150,7 @@ void AdjustPlayerBeam() {
 									if (laserBeam) {
 										if (laserBeam->parent) {
 											NiPoint3 diff = laserPos - (laserBeam->parent->world.translate + fpOffset);
+											diff = diff / actorScale;
 											float dist = Length(diff);
 											float laserLen = CalculateLaserLength(laserBeam);
 											NiMatrix3 scale = GetScaleMatrix(1, dist / laserLen, 1);
@@ -165,6 +167,7 @@ void AdjustPlayerBeam() {
 									if (laserDot) {
 										if (laserDot->parent) {
 											NiPoint3 diff = laserPos - (laserDot->parent->world.translate + fpOffset);
+											diff = diff / actorScale;
 											NiPoint3 a = NiPoint3(0, 0, 1);
 											NiPoint3 axis = Normalize(CrossProduct(a, laserNormal));
 											float ang = acos(max(min(DotProduct(a, laserNormal), 1.f), -1.f));
@@ -229,6 +232,7 @@ void AdjustNPCBeam(Actor* a) {
 						pick.GetAllCollectorRayHitAt(0, res);
 						NiPoint3 laserNormal = res.normal;
 						NiPoint3 laserPos = res.position / *ptr_fBS2HkScale + laserNormal * 2.f;
+						float actorScale = GetActorScale(a);
 						if (weapon) {
 							Visit(weapon, [&](NiAVObject* obj) {
 								if (!obj->IsTriShape())
@@ -244,6 +248,7 @@ void AdjustNPCBeam(Actor* a) {
 								if (laserBeam) {
 									if (laserBeam->parent) {
 										NiPoint3 diff = laserPos - laserBeam->parent->world.translate;
+										diff = diff / actorScale;
 										float dist = Length(diff);
 										float laserLen = CalculateLaserLength(laserBeam);
 										NiMatrix3 scale = GetScaleMatrix(1, dist / laserLen, 1);
@@ -258,6 +263,7 @@ void AdjustNPCBeam(Actor* a) {
 								if (laserDot) {
 									if (laserDot->parent) {
 										NiPoint3 diff = laserPos - laserDot->parent->world.translate;
+										diff = diff / actorScale;
 										NiPoint3 a = NiPoint3(0, 0, 1);
 										NiPoint3 axis = Normalize(CrossProduct(a, laserNormal));
 										float ang = acos(max(min(DotProduct(a, laserNormal), 1.f), -1.f));
