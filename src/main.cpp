@@ -36,7 +36,7 @@ void SetupPickData(const NiPoint3& start, const NiPoint3& end, Actor* a, BGSProj
 			flag = 0x15C15160;
 		*(uint64_t*)((uintptr_t)&pick + 0xC8) = filter & ~flag;
 	}
-	*(uint32_t*)((uintptr_t)&pick + 0x0C) = ((((ActorEx*)a)->GetCurrentCollisionGroup() << 16) | 0x9);
+	*(uint32_t*)((uintptr_t)&pick + 0x0C) = ((((ActorEx*)a)->GetCurrentCollisionGroup() << 16) | 0x1);
 }
 
 void FreeAllHitsCollector(F4::bhkPickData& pick) {
@@ -124,13 +124,16 @@ void AdjustPlayerBeam() {
 						}
 
 						F4::bhkPickData pick = F4::bhkPickData();
-						SetupPickData(newPos, newPos + dir * 10000.f, p, projForm, pick);
+						SetupPickData(newPos, newPos + dir * 100000.f, p, projForm, pick);
 						NiAVObject* nodeHit = F4::CombatUtilities::CalculateProjectileLOS(p, projForm, pick);
 						if (pick.HasHit()) {
 							hknpCollisionResult res;
 							pick.GetAllCollectorRayHitAt(0, res);
-							NiPoint3 laserNormal = res.normal;
+							NiPoint3 laserNormal = Normalize(res.normal);
 							NiPoint3 laserPos = res.position / *ptr_fBS2HkScale + laserNormal * 2.f;
+							//_MESSAGE("autoaim %f %f %f", p->bulletAutoAim.x, p->bulletAutoAim.y, p->bulletAutoAim.z);
+							//_MESSAGE("laserPos %f %f %f", laserPos.x, laserPos.y, laserPos.z);
+							//_MESSAGE("laserNormal %f %f %f", laserNormal.x, laserNormal.y, laserNormal.z);
 							if (weapon) {
 								InterlockedIncrement((volatile long*)((uintptr_t)p->Get3D() + 0x138));
 								Visit(weapon, [&](NiAVObject* obj) {
@@ -152,6 +155,8 @@ void AdjustPlayerBeam() {
 											NiPoint3 targetDir = Normalize(laserPos - (laserBeam->parent->world.translate + fpOffset));
 											NiPoint3 axis = Normalize(laserBeam->parent->world.rotate * CrossProduct(targetDir, gunDir));
 											float ang = acos(max(min(DotProduct(targetDir, gunDir), 1.f), -1.f));
+											//_MESSAGE("beam axis %f %f %f", axis.x, axis.y, axis.z);
+											//_MESSAGE("beam ang %f", ang);
 											laserBeam->local.rotate = scale * GetRotationMatrix33(axis, ang);
 											NiUpdateData ud;
 											laserBeam->UpdateTransforms(ud);
@@ -165,6 +170,8 @@ void AdjustPlayerBeam() {
 											float ang = acos(max(min(DotProduct(a, laserNormal), 1.f), -1.f));
 											laserDot->local.rotate = GetRotationMatrix33(axis, -ang) * Inverse(laserDot->parent->world.rotate);
 											laserDot->local.translate = laserDot->parent->world.rotate * diff;
+											//_MESSAGE("dot axis %f %f %f", axis.x, axis.y, axis.z);
+											//_MESSAGE("dot ang %f", ang);
 											NiUpdateData ud;
 											laserDot->UpdateTransforms(ud);
 										}
