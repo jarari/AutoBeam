@@ -75,6 +75,109 @@ float CalculateLaserLength(NiAVObject* tri) {
 	return laserLen;
 }
 
+bool TryFindingLaserSight(NiAVObject* root) {
+	bool found = false;
+	NiAVObject* scanned = root->GetObjectByName("_Scanned");
+	if (scanned)
+		return false;
+
+	bool marked = false;
+	NiNode* markingParent = root->IsNode();
+	Visit(root, [&marked, &markingParent](NiAVObject* obj) {
+		if ((obj->flags.flags & 0x1) == 0x1)
+			return false;
+
+		if (!markingParent && obj->IsNode()) {
+			markingParent = obj->IsNode();
+			return false;
+		}
+
+		if (!obj->IsTriShape())
+			return false;
+
+		int16_t vertexCount = *(int16_t*)((uintptr_t)obj + 0x164);
+		BSShaderProperty* shaderProperty = *(BSShaderProperty**)((uintptr_t)obj + 0x138);
+		if (vertexCount < 100 && shaderProperty && *(uintptr_t*)shaderProperty == REL::Relocation<uintptr_t>{ VTABLE::BSEffectShaderProperty[0] }.address()) {
+			std::string name{ obj->name.c_str() }; 
+			for (auto& c : name) {
+				c = tolower(c);
+			}
+			if (name.find("beam") != std::string::npos) {
+				obj->name = "_LaserBeam";
+			}
+			else if (name.find("dot") != std::string::npos) {
+				obj->name = "_LaserDot";
+			}
+			else {
+				marked = true;
+				obj->name = "_Scanned";
+			}
+		}
+		return false;
+	});
+	if (!marked) {
+		marked = true;
+		NiNode* node = CreateBone("_Scanned");
+		markingParent->AttachChild(node, true);
+		node->local.translate = NiPoint3();
+		node->local.rotate.MakeIdentity();
+	}
+
+	return found;
+}
+
+void AdjustLaserSight(Actor* a, NiNode* root, const NiPoint3& gunDir, const NiPoint3& laserPos, const NiPoint3& laserNormal, const NiPoint3& fpOffset) {
+	if (root) {
+		float actorScale = GetActorScale(a);
+		InterlockedIncrement((volatile long*)((uintptr_t)p->Get3D() + 0x138));
+		Visit(root, [&](NiAVObject* obj) {
+			if (obj->refCount == 0 || (obj->flags.flags & 0x1) == 0x1 || !obj->IsTriShape())
+				return false;
+			NiAVObject* laserBeam = nullptr;
+			NiAVObject* laserDot = nullptr;
+			if (obj->name == "_LaserBeam")
+				laserBeam = obj;
+			else if (obj->name == "_LaserDot")
+				laserDot = obj;
+
+			if (laserBeam) {
+				if (laserBeam->parent) {
+					NiPoint3 diff = laserPos - (laserBeam->parent->world.translate + fpOffset);
+					diff = diff / actorScale;
+					float dist = Length(diff);
+					float laserLen = CalculateLaserLength(laserBeam);
+					NiMatrix3 scale = GetScaleMatrix(1, dist / laserLen, 1);
+					NiPoint3 targetDir = Normalize(laserPos - (laserBeam->parent->world.translate + fpOffset));
+					NiPoint3 axis = Normalize(laserBeam->parent->world.rotate * CrossProduct(targetDir, gunDir));
+					float ang = acos(max(min(DotProduct(targetDir, gunDir), 1.f), -1.f));
+					//_MESSAGE("beam axis %f %f %f", axis.x, axis.y, axis.z);
+					//_MESSAGE("beam ang %f", ang);
+					laserBeam->local.rotate = scale * GetRotationMatrix33(axis, ang);
+					NiUpdateData ud;
+					laserBeam->UpdateTransforms(ud);
+				}
+			}
+			if (laserDot) {
+				if (laserDot->parent) {
+					NiPoint3 diff = laserPos - (laserDot->parent->world.translate + fpOffset);
+					diff = diff / actorScale;
+					NiPoint3 a = NiPoint3(0, 0, 1);
+					NiPoint3 axis = Normalize(CrossProduct(a, laserNormal));
+					float ang = acos(max(min(DotProduct(a, laserNormal), 1.f), -1.f));
+					laserDot->local.rotate = GetRotationMatrix33(axis, -ang) * Inverse(laserDot->parent->world.rotate);
+					laserDot->local.translate = laserDot->parent->world.rotate * diff;
+					//_MESSAGE("dot axis %f %f %f", axis.x, axis.y, axis.z);
+					//_MESSAGE("dot ang %f", ang);
+					NiUpdateData ud;
+					laserDot->UpdateTransforms(ud);
+				}
+			}
+			return false;
+		});
+		InterlockedDecrement((volatile long*)((uintptr_t)p->Get3D() + 0x138));
+	}
+}
+
 void AdjustPlayerBeam() {
 	if (pcam->currentState == pcam->cameraStates[CameraState::k3rdPerson]
 		|| pcam->currentState == pcam->cameraStates[CameraState::kFirstPerson]
@@ -89,14 +192,19 @@ void AdjustPlayerBeam() {
 						projForm = instance->rangedData->overrideProjectile;
 					}
 					if (projForm) {
+						NiNode* weapon = (NiNode*)p->Get3D()->GetObjectByName("Weapon");
 						if (!p->Get3D()->GetObjectByName("_LaserDot") && !p->Get3D()->GetObjectByName("_LaserBeam")) {
+							if (weapon) {
+								bool suspectedSightFound = TryFindingLaserSight(weapon);
+								if (!suspectedSightFound)
+									return;
+							}
 							return;
 						}
 
 						bool firstPerson = p->Get3D(true) == p->Get3D();
 						NiPoint3 fpOffset;
 						NiNode* projNode = (NiNode*)p->Get3D()->GetObjectByName("ProjectileNode");
-						NiNode* weapon = (NiNode*)p->Get3D()->GetObjectByName("Weapon");
 						if (!projNode) {
 							projNode = weapon;
 						}
@@ -107,7 +215,7 @@ void AdjustPlayerBeam() {
 						float gunAimDiffThreshold = gunAimDiffThreshold3rd;
 						if (firstPerson) {
 							NiNode* camera = (NiNode*)p->Get3D()->GetObjectByName("Camera");
-							fpOffset = pcam->cameraRoot->world.translate - camera->world.translate;
+							fpOffset = pcam->cameraRoot->world.translate - *F4::ptr_k1stPersonCameraLocation;
 							dir = camDir;
 							newPos = pcam->cameraRoot->world.translate + dir * 25.f;
 							gunAimDiffThreshold = gunAimDiffThreshold1st;
@@ -124,66 +232,25 @@ void AdjustPlayerBeam() {
 						}
 
 						F4::bhkPickData pick = F4::bhkPickData();
-						SetupPickData(newPos, newPos + dir * 100000.f, p, projForm, pick);
+						SetupPickData(newPos, newPos + dir * 10000.f, p, projForm, pick);
 						NiAVObject* nodeHit = F4::CombatUtilities::CalculateProjectileLOS(p, projForm, pick);
+						NiPoint3 laserNormal = dir * -1.f;
+						NiPoint3 laserPos;
+						float actorScale = GetActorScale(p);
 						if (pick.HasHit()) {
 							hknpCollisionResult res;
 							pick.GetAllCollectorRayHitAt(0, res);
-							NiPoint3 laserNormal = Normalize(res.normal);
-							NiPoint3 laserPos = res.position / *ptr_fBS2HkScale + laserNormal * 2.f;
-							float actorScale = GetActorScale(p);
-							//_MESSAGE("autoaim %f %f %f", p->bulletAutoAim.x, p->bulletAutoAim.y, p->bulletAutoAim.z);
-							//_MESSAGE("laserPos %f %f %f", laserPos.x, laserPos.y, laserPos.z);
-							//_MESSAGE("laserNormal %f %f %f", laserNormal.x, laserNormal.y, laserNormal.z);
-							if (weapon) {
-								InterlockedIncrement((volatile long*)((uintptr_t)p->Get3D() + 0x138));
-								Visit(weapon, [&](NiAVObject* obj) {
-									if (obj->refCount == 0 || (obj->flags.flags & 0x1) == 0x1 || !obj->IsTriShape())
-										return false;
-									NiAVObject* laserBeam = nullptr;
-									NiAVObject* laserDot = nullptr;
-									if (obj->name == "_LaserBeam")
-										laserBeam = obj;
-									else if (obj->name == "_LaserDot")
-										laserDot = obj;
-
-									if (laserBeam) {
-										if (laserBeam->parent) {
-											NiPoint3 diff = laserPos - (laserBeam->parent->world.translate + fpOffset);
-											diff = diff / actorScale;
-											float dist = Length(diff);
-											float laserLen = CalculateLaserLength(laserBeam);
-											NiMatrix3 scale = GetScaleMatrix(1, dist / laserLen, 1);
-											NiPoint3 targetDir = Normalize(laserPos - (laserBeam->parent->world.translate + fpOffset));
-											NiPoint3 axis = Normalize(laserBeam->parent->world.rotate * CrossProduct(targetDir, gunDir));
-											float ang = acos(max(min(DotProduct(targetDir, gunDir), 1.f), -1.f));
-											//_MESSAGE("beam axis %f %f %f", axis.x, axis.y, axis.z);
-											//_MESSAGE("beam ang %f", ang);
-											laserBeam->local.rotate = scale * GetRotationMatrix33(axis, ang);
-											NiUpdateData ud;
-											laserBeam->UpdateTransforms(ud);
-										}
-									}
-									if (laserDot) {
-										if (laserDot->parent) {
-											NiPoint3 diff = laserPos - (laserDot->parent->world.translate + fpOffset);
-											diff = diff / actorScale;
-											NiPoint3 a = NiPoint3(0, 0, 1);
-											NiPoint3 axis = Normalize(CrossProduct(a, laserNormal));
-											float ang = acos(max(min(DotProduct(a, laserNormal), 1.f), -1.f));
-											laserDot->local.rotate = GetRotationMatrix33(axis, -ang) * Inverse(laserDot->parent->world.rotate);
-											laserDot->local.translate = laserDot->parent->world.rotate * diff;
-											//_MESSAGE("dot axis %f %f %f", axis.x, axis.y, axis.z);
-											//_MESSAGE("dot ang %f", ang);
-											NiUpdateData ud;
-											laserDot->UpdateTransforms(ud);
-										}
-									}
-									return false;
-								});
-								InterlockedDecrement((volatile long*)((uintptr_t)p->Get3D() + 0x138));
-							}
+							laserNormal = Normalize(res.normal);
+							laserPos = res.position / *ptr_fBS2HkScale + laserNormal * 2.f;
 						}
+						else {
+							laserPos = p->bulletAutoAim + laserNormal * 2.f;
+						}
+						//_MESSAGE("autoaim %f %f %f", p->bulletAutoAim.x, p->bulletAutoAim.y, p->bulletAutoAim.z);
+						//_MESSAGE("laserPos %f %f %f", laserPos.x, laserPos.y, laserPos.z);
+						//_MESSAGE("laserNormal %f %f %f", laserNormal.x, laserNormal.y, laserNormal.z);
+						AdjustLaserSight(p, weapon, gunDir, laserPos, laserNormal, fpOffset);
+
 						FreeAllHitsCollector(pick);
 					}
 				}
@@ -203,12 +270,17 @@ void AdjustNPCBeam(Actor* a) {
 					projForm = instance->rangedData->overrideProjectile;
 				}
 				if (projForm) {
+					NiNode* weapon = (NiNode*)a->Get3D()->GetObjectByName("Weapon");
 					if (!a->Get3D()->GetObjectByName("_LaserDot") && !a->Get3D()->GetObjectByName("_LaserBeam")) {
+						if (weapon) {
+							bool suspectedSightFound = TryFindingLaserSight(weapon);
+							if (!suspectedSightFound)
+								return;
+						}
 						return;
 					}
 
 					NiNode* projNode = (NiNode*)a->Get3D()->GetObjectByName("ProjectileNode");
-					NiNode* weapon = (NiNode*)a->Get3D()->GetObjectByName("Weapon");
 					if (!projNode) {
 						projNode = weapon;
 					}
@@ -227,56 +299,11 @@ void AdjustNPCBeam(Actor* a) {
 					SetupPickData(newPos, newPos + dir * 10000.f, a, projForm, pick);
 					NiAVObject* nodeHit = F4::CombatUtilities::CalculateProjectileLOS(a, projForm, pick);
 					if (pick.HasHit()) {
-						a->Get3D()->IncRefCount();
 						hknpCollisionResult res;
 						pick.GetAllCollectorRayHitAt(0, res);
 						NiPoint3 laserNormal = res.normal;
 						NiPoint3 laserPos = res.position / *ptr_fBS2HkScale + laserNormal * 2.f;
-						float actorScale = GetActorScale(a);
-						if (weapon) {
-							Visit(weapon, [&](NiAVObject* obj) {
-								if (!obj->IsTriShape())
-									return false;
-
-								NiAVObject* laserBeam = nullptr;
-								NiAVObject* laserDot = nullptr;
-								if (obj->name == "_LaserBeam")
-									laserBeam = obj;
-								else if (obj->name == "_LaserDot")
-									laserDot = obj;
-
-								if (laserBeam) {
-									if (laserBeam->parent) {
-										NiPoint3 diff = laserPos - laserBeam->parent->world.translate;
-										diff = diff / actorScale;
-										float dist = Length(diff);
-										float laserLen = CalculateLaserLength(laserBeam);
-										NiMatrix3 scale = GetScaleMatrix(1, dist / laserLen, 1);
-										NiPoint3 targetDir = Normalize(laserPos - laserBeam->parent->world.translate);
-										NiPoint3 axis = Normalize(laserBeam->parent->world.rotate * CrossProduct(targetDir, gunDir));
-										float ang = acos(max(min(DotProduct(targetDir, gunDir), 1.f), -1.f));
-										laserBeam->local.rotate = scale * GetRotationMatrix33(axis, ang);
-										NiUpdateData ud;
-										laserBeam->UpdateTransforms(ud);
-									}
-								}
-								if (laserDot) {
-									if (laserDot->parent) {
-										NiPoint3 diff = laserPos - laserDot->parent->world.translate;
-										diff = diff / actorScale;
-										NiPoint3 a = NiPoint3(0, 0, 1);
-										NiPoint3 axis = Normalize(CrossProduct(a, laserNormal));
-										float ang = acos(max(min(DotProduct(a, laserNormal), 1.f), -1.f));
-										laserDot->local.rotate = GetRotationMatrix33(axis, -ang) * Inverse(laserDot->parent->world.rotate);
-										laserDot->local.translate = laserDot->parent->world.rotate * diff;
-										NiUpdateData ud;
-										laserDot->UpdateTransforms(ud);
-									}
-								}
-								return false;
-							});
-						}
-						a->Get3D()->DecRefCount();
+						AdjustLaserSight(a, weapon, gunDir, laserPos, laserNormal, NiPoint3());
 					}
 					FreeAllHitsCollector(pick);
 				}
