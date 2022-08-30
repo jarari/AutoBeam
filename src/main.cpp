@@ -39,18 +39,6 @@ void SetupPickData(const NiPoint3& start, const NiPoint3& end, Actor* a, BGSProj
 	*(uint32_t*)((uintptr_t)&pick + 0x0C) = ((((ActorEx*)a)->GetCurrentCollisionGroup() << 16) | 0x1);
 }
 
-void FreeAllHitsCollector(F4::bhkPickData& pick) {
-	hkMemoryRouter* memRouter = hkMemoryRouter::GetInstancePtr();
-	hkMemoryAllocator* containerHeapAllocator = (hkMemoryAllocator*)ptr_containerHeapAllocator.address();
-	hknpAllHitsCollector* collector = *(hknpAllHitsCollector**)((uintptr_t)&pick + 0xD0);
-	if (collector) {
-		int32_t memSize = 0x30;
-		int32_t arrSize = 0x60 * (collector->hits._capacityAndFlags & 0x3FFFFFFF);
-		containerHeapAllocator->BufFree(collector->hits._data, arrSize);
-		memRouter->heap->BufFree(collector, memSize);
-	}
-}
-
 float CalculateLaserLength(NiAVObject* tri) {
 	float laserLen = 759.f;
 	using namespace F4::BSGraphics;
@@ -102,7 +90,7 @@ bool TryFindingLaserSight(NiAVObject* root) {
 			for (auto& c : name) {
 				c = tolower(c);
 			}
-			if (name.find("beam") != std::string::npos) {
+			if (vertexCount > 40 && name.find("beam") != std::string::npos) {
 				obj->name = "_LaserBeam";
 			}
 			else if (name.find("dot") != std::string::npos) {
@@ -129,7 +117,7 @@ bool TryFindingLaserSight(NiAVObject* root) {
 void AdjustLaserSight(Actor* a, NiNode* root, const NiPoint3& gunDir, const NiPoint3& laserPos, const NiPoint3& laserNormal, const NiPoint3& fpOffset) {
 	if (root) {
 		float actorScale = GetActorScale(a);
-		InterlockedIncrement((volatile long*)((uintptr_t)p->Get3D() + 0x138));
+		InterlockedIncrement((volatile long*)((uintptr_t)a->Get3D() + 0x138));
 		Visit(root, [&](NiAVObject* obj) {
 			if (obj->refCount == 0 || (obj->flags.flags & 0x1) == 0x1 || !obj->IsTriShape())
 				return false;
@@ -174,7 +162,7 @@ void AdjustLaserSight(Actor* a, NiNode* root, const NiPoint3& gunDir, const NiPo
 			}
 			return false;
 		});
-		InterlockedDecrement((volatile long*)((uintptr_t)p->Get3D() + 0x138));
+		InterlockedDecrement((volatile long*)((uintptr_t)a->Get3D() + 0x138));
 	}
 }
 
@@ -250,8 +238,6 @@ void AdjustPlayerBeam() {
 						//_MESSAGE("laserPos %f %f %f", laserPos.x, laserPos.y, laserPos.z);
 						//_MESSAGE("laserNormal %f %f %f", laserNormal.x, laserNormal.y, laserNormal.z);
 						AdjustLaserSight(p, weapon, gunDir, laserPos, laserNormal, fpOffset);
-
-						FreeAllHitsCollector(pick);
 					}
 				}
 			}
@@ -305,7 +291,6 @@ void AdjustNPCBeam(Actor* a) {
 						NiPoint3 laserPos = res.position / *ptr_fBS2HkScale + laserNormal * 2.f;
 						AdjustLaserSight(a, weapon, gunDir, laserPos, laserNormal, NiPoint3());
 					}
-					FreeAllHitsCollector(pick);
 				}
 			}
 		}
