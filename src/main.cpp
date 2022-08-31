@@ -16,18 +16,21 @@ uintptr_t PCUpdateMainThreadOrig;
 const static float gunAimDiffThreshold1st = 0.209f;
 const static float gunAimDiffThreshold3rd = 0.523f;
 
-void SetupPickData(const NiPoint3& start, const NiPoint3& end, Actor* a, BGSProjectile* projForm, F4::bhkPickData& pick) {
+bhkNPCollisionObject* GetPickData(const NiPoint3& start, const NiPoint3& end, Actor* a, BGSProjectile* projForm, F4::bhkPickData& pick) {
+	if (!a->parentCell)
+		return nullptr;
+	bhkWorld* world = a->parentCell->GetbhkWorld();
+	if (!world)
+		return nullptr;
+	hknpBSWorld* hkWorld = *(hknpBSWorld**)((uintptr_t)world + 0x60);
+	if (!hkWorld)
+		return nullptr;
+
+	bhkNPCollisionObject* ret;
 	pick.SetStartEnd(start, end);
-	hkMemoryRouter* memRouter = hkMemoryRouter::GetInstancePtr();
-	int32_t memSize = 0x30;
-	int32_t arrSize = 0x60 * 0xA;
-	hknpAllHitsCollector* collector = (hknpAllHitsCollector*)memRouter->heap->BufAlloc(memSize);
-	hkMemoryAllocator* containerHeapAllocator = (hkMemoryAllocator*)ptr_containerHeapAllocator.address();
-	stl::emplace_vtable<hknpAllHitsCollector>(collector);
-	collector->hits._data = (hknpCollisionResult*)containerHeapAllocator->BufAlloc(arrSize);
-	collector->hits._capacityAndFlags = 0x8000000A;
-	*(uintptr_t*)((uintptr_t)&pick + 0xD0) = (uintptr_t)collector;
-	*(uint32_t*)((uintptr_t)&pick + 0xD8) = 0;
+	/*hknpAllHitsCollector collector = hknpAllHitsCollector();
+	*(uintptr_t*)((uintptr_t)&pick + 0xD0) = (uintptr_t)&collector;
+	*(uint32_t*)((uintptr_t)&pick + 0xD8) = 3;*/
 	if (projForm->data.collisionLayer) {
 		uint32_t index = projForm->data.collisionLayer->collisionIdx;
 		uint64_t filter = *(uint64_t*)((*REL::Relocation<uint64_t*>{ REL::ID(469495) }) + 0x1A0 + 0x8 * index) | 0x40000000;
@@ -37,6 +40,10 @@ void SetupPickData(const NiPoint3& start, const NiPoint3& end, Actor* a, BGSProj
 		*(uint64_t*)((uintptr_t)&pick + 0xC8) = filter & ~flag;
 	}
 	*(uint32_t*)((uintptr_t)&pick + 0x0C) = ((((ActorEx*)a)->GetCurrentCollisionGroup() << 16) | 0x1);
+	hkWorld->MarkForRead();
+	ret = F4::CombatUtilities::CalculateProjectileLOS(a, projForm, pick);
+	hkWorld->UnmarkForRead();
+	return ret;
 }
 
 float CalculateLaserLength(NiAVObject* tri) {
@@ -85,7 +92,11 @@ bool TryFindingLaserSight(NiAVObject* root) {
 
 		int16_t vertexCount = *(int16_t*)((uintptr_t)obj + 0x164);
 		BSShaderProperty* shaderProperty = *(BSShaderProperty**)((uintptr_t)obj + 0x138);
-		if (vertexCount < 100 && shaderProperty && *(uintptr_t*)shaderProperty == REL::Relocation<uintptr_t>{ VTABLE::BSEffectShaderProperty[0] }.address()) {
+		if (vertexCount < 100 
+			&& shaderProperty 
+			&& *(uintptr_t*)shaderProperty == REL::Relocation<uintptr_t>{ VTABLE::BSEffectShaderProperty[0] }.address()
+			&& obj->parent
+			&& *(uintptr_t*)obj->parent == REL::Relocation<uintptr_t>{ VTABLE::NiBillboardNode[0] }.address()) {
 			std::string name{ obj->name.c_str() }; 
 			for (auto& c : name) {
 				c = tolower(c);
@@ -215,21 +226,26 @@ void AdjustPlayerBeam() {
 
 						float camFovThreshold = 0.85f;
 						float gunAimDiff = acos(DotProduct(camDir, gunDir));
-						if (p->gunState == 1 || p->gunState == 3 || p->gunState == 4 || gunAimDiff > gunAimDiffThreshold) {
+						if (p->weaponState == WEAPON_STATE::kDrawing || p->gunState == 1 || p->gunState == 3 || p->gunState == 4 || gunAimDiff > gunAimDiffThreshold) {
 							dir = gunDir;
 						}
 
 						F4::bhkPickData pick = F4::bhkPickData();
-						SetupPickData(newPos, newPos + dir * 10000.f, p, projForm, pick);
-						NiAVObject* nodeHit = F4::CombatUtilities::CalculateProjectileLOS(p, projForm, pick);
+						bhkNPCollisionObject* nodeHit = GetPickData(newPos, newPos + dir * 10000.f, p, projForm, pick);
 						NiPoint3 laserNormal = dir * -1.f;
 						NiPoint3 laserPos;
 						float actorScale = GetActorScale(p);
 						if (pick.HasHit()) {
-							hknpCollisionResult res;
+							/*hknpCollisionResult res;
 							pick.GetAllCollectorRayHitAt(0, res);
 							laserNormal = Normalize(res.normal);
-							laserPos = res.position / *ptr_fBS2HkScale + laserNormal * 2.f;
+							laserPos = res.position / *ptr_fBS2HkScale + laserNormal * 2.f;*/
+							laserNormal = NiPoint3(*(float*)((uintptr_t)&pick + 0x70)
+												   , *(float*)((uintptr_t)&pick + 0x74)
+												   , *(float*)((uintptr_t)&pick + 0x78));
+							laserPos = NiPoint3(*(float*)((uintptr_t)&pick + 0x60)
+												, *(float*)((uintptr_t)&pick + 0x64)
+												, *(float*)((uintptr_t)&pick + 0x68)) / *ptr_fBS2HkScale + laserNormal * 2.f;
 						}
 						else {
 							laserPos = p->bulletAutoAim + laserNormal * 2.f;
@@ -277,18 +293,23 @@ void AdjustNPCBeam(Actor* a) {
 					float gunAimDiffThreshold = gunAimDiffThreshold3rd;
 
 					float gunAimDiff = acos(DotProduct(dir, gunDir));
-					if (a->gunState == 1 || a->gunState == 3 || a->gunState == 4 || gunAimDiff > gunAimDiffThreshold) {
+					if (a->weaponState == WEAPON_STATE::kDrawing || a->gunState == 1 || a->gunState == 3 || a->gunState == 4 || gunAimDiff > gunAimDiffThreshold) {
 						dir = gunDir;
 					}
 
 					F4::bhkPickData pick = F4::bhkPickData();
-					SetupPickData(newPos, newPos + dir * 10000.f, a, projForm, pick);
-					NiAVObject* nodeHit = F4::CombatUtilities::CalculateProjectileLOS(a, projForm, pick);
+					bhkNPCollisionObject* nodeHit = GetPickData(newPos, newPos + dir * 10000.f, p, projForm, pick);
 					if (pick.HasHit()) {
-						hknpCollisionResult res;
+						/*hknpCollisionResult res;
 						pick.GetAllCollectorRayHitAt(0, res);
 						NiPoint3 laserNormal = res.normal;
-						NiPoint3 laserPos = res.position / *ptr_fBS2HkScale + laserNormal * 2.f;
+						NiPoint3 laserPos = res.position / *ptr_fBS2HkScale + laserNormal * 2.f;*/
+						NiPoint3 laserNormal = NiPoint3(*(float*)((uintptr_t)&pick + 0x70)
+											   , *(float*)((uintptr_t)&pick + 0x74)
+											   , *(float*)((uintptr_t)&pick + 0x78));
+						NiPoint3 laserPos = NiPoint3(*(float*)((uintptr_t)&pick + 0x60)
+											, *(float*)((uintptr_t)&pick + 0x64)
+											, *(float*)((uintptr_t)&pick + 0x68)) / *ptr_fBS2HkScale + laserNormal * 2.f;
 						AdjustLaserSight(a, weapon, gunDir, laserPos, laserNormal, NiPoint3());
 					}
 				}
