@@ -31,6 +31,8 @@ bhkNPCollisionObject* GetPickData(const NiPoint3& start, const NiPoint3& end, Ac
 	/*hknpAllHitsCollector collector = hknpAllHitsCollector();
 	*(uintptr_t*)((uintptr_t)&pick + 0xD0) = (uintptr_t)&collector;
 	*(uint32_t*)((uintptr_t)&pick + 0xD8) = 3;*/
+	hknpClosestHitCollector collector = hknpClosestHitCollector();
+	*(uintptr_t*)((uintptr_t)&pick + 0xD0) = (uintptr_t)&collector;
 	if (projForm->data.collisionLayer) {
 		uint32_t index = projForm->data.collisionLayer->collisionIdx;
 		uint64_t filter = *(uint64_t*)((*REL::Relocation<uint64_t*>{ REL::ID(469495) }) + 0x1A0 + 0x8 * index) | 0x40000000;
@@ -226,7 +228,7 @@ void AdjustPlayerBeam() {
 
 						float camFovThreshold = 0.85f;
 						float gunAimDiff = acos(DotProduct(camDir, gunDir));
-						if (p->weaponState == WEAPON_STATE::kDrawing || p->gunState == 1 || p->gunState == 3 || p->gunState == 4 || gunAimDiff > gunAimDiffThreshold) {
+						if (p->weaponState == WEAPON_STATE::kDrawing || (p->gunState >= 1 && p->gunState <= 4) || gunAimDiff > gunAimDiffThreshold) {
 							dir = gunDir;
 						}
 
@@ -293,7 +295,7 @@ void AdjustNPCBeam(Actor* a) {
 					float gunAimDiffThreshold = gunAimDiffThreshold3rd;
 
 					float gunAimDiff = acos(DotProduct(dir, gunDir));
-					if (a->weaponState == WEAPON_STATE::kDrawing || a->gunState == 1 || a->gunState == 3 || a->gunState == 4 || gunAimDiff > gunAimDiffThreshold) {
+					if (a->weaponState == WEAPON_STATE::kDrawing || (p->gunState >= 1 && p->gunState <= 4) || gunAimDiff > gunAimDiffThreshold) {
 						dir = gunDir;
 					}
 
