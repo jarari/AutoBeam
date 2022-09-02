@@ -228,7 +228,7 @@ void AdjustPlayerBeam() {
 
 						float camFovThreshold = 0.85f;
 						float gunAimDiff = acos(DotProduct(camDir, gunDir));
-						if (p->weaponState == WEAPON_STATE::kDrawing || (p->gunState >= 1 && p->gunState <= 4) || gunAimDiff > gunAimDiffThreshold) {
+						if (p->weaponState == WEAPON_STATE::kDrawing || p->moveMode & 32 || (p->gunState >= 1 && p->gunState <= 4) || gunAimDiff > gunAimDiffThreshold) {
 							dir = gunDir;
 						}
 
@@ -295,7 +295,7 @@ void AdjustNPCBeam(Actor* a) {
 					float gunAimDiffThreshold = gunAimDiffThreshold3rd;
 
 					float gunAimDiff = acos(DotProduct(dir, gunDir));
-					if (a->weaponState == WEAPON_STATE::kDrawing || (p->gunState >= 1 && p->gunState <= 4) || gunAimDiff > gunAimDiffThreshold) {
+					if (a->weaponState == WEAPON_STATE::kDrawing || a->moveMode & 32 || (p->gunState >= 1 && p->gunState <= 4) || gunAimDiff > gunAimDiffThreshold) {
 						dir = gunDir;
 					}
 
