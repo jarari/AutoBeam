@@ -1,9 +1,9 @@
 #include <Havok.h>
-#include <Utilities.h>
 #include <MathUtils.h>
+#include <Utilities.h>
 #include <half.h>
-#define max(a,b)            (((a) > (b)) ? (a) : (b))
-#define min(a,b)            (((a) < (b)) ? (a) : (b))
+#define max(a, b) (((a) > (b)) ? (a) : (b))
+#define min(a, b) (((a) < (b)) ? (a) : (b))
 using namespace RE;
 using std::unordered_map;
 
@@ -16,7 +16,8 @@ uintptr_t PCUpdateMainThreadOrig;
 const static float gunAimDiffThreshold1st = 0.209f;
 const static float gunAimDiffThreshold3rd = 0.523f;
 
-bhkNPCollisionObject* GetPickData(const NiPoint3& start, const NiPoint3& end, Actor* a, BGSProjectile* projForm, F4::bhkPickData& pick) {
+bhkNPCollisionObject* GetPickData(const NiPoint3& start, const NiPoint3& end, Actor* a, BGSProjectile* projForm, F4::bhkPickData& pick)
+{
 	if (!a->parentCell)
 		return nullptr;
 	bhkWorld* world = a->parentCell->GetbhkWorld();
@@ -48,7 +49,8 @@ bhkNPCollisionObject* GetPickData(const NiPoint3& start, const NiPoint3& end, Ac
 	return ret;
 }
 
-float CalculateLaserLength(NiAVObject* tri) {
+float CalculateLaserLength(NiAVObject* tri)
+{
 	float laserLen = 759.f;
 	using namespace F4::BSGraphics;
 	TriShape* triShape = *(TriShape**)((uintptr_t)tri + 0x148);
@@ -61,9 +63,7 @@ float CalculateLaserLength(NiAVObject* tri) {
 	if (triShape && triShape->buffer08) {
 		for (int v = 0; v < vertexCount; ++v) {
 			uintptr_t posPtr = (uintptr_t)triShape->buffer08->rawVertexData + v * vertexSize + posOffset;
-			NiPoint3 pos{ half_float::half_cast<float>(*(half_float::half*)(posPtr))
-				, half_float::half_cast<float>(*(half_float::half*)(posPtr + 0x2))
-				, half_float::half_cast<float>(*(half_float::half*)(posPtr + 0x4)) };
+			NiPoint3 pos{ half_float::half_cast<float>(*(half_float::half*)(posPtr)), half_float::half_cast<float>(*(half_float::half*)(posPtr + 0x2)), half_float::half_cast<float>(*(half_float::half*)(posPtr + 0x4)) };
 			ymin = min(ymin, pos.y);
 			ymax = max(ymax, pos.y);
 		}
@@ -72,7 +72,8 @@ float CalculateLaserLength(NiAVObject* tri) {
 	return laserLen;
 }
 
-bool TryFindingLaserSight(NiAVObject* root) {
+bool TryFindingLaserSight(NiAVObject* root)
+{
 	bool found = false;
 	NiAVObject* scanned = root->GetObjectByName("_Scanned");
 	if (scanned)
@@ -94,22 +95,16 @@ bool TryFindingLaserSight(NiAVObject* root) {
 
 		int16_t vertexCount = *(int16_t*)((uintptr_t)obj + 0x164);
 		BSShaderProperty* shaderProperty = *(BSShaderProperty**)((uintptr_t)obj + 0x138);
-		if (vertexCount < 100 
-			&& shaderProperty 
-			&& *(uintptr_t*)shaderProperty == REL::Relocation<uintptr_t>{ VTABLE::BSEffectShaderProperty[0] }.address()
-			&& obj->parent
-			&& *(uintptr_t*)obj->parent == REL::Relocation<uintptr_t>{ VTABLE::NiBillboardNode[0] }.address()) {
-			std::string name{ obj->name.c_str() }; 
+		if (vertexCount < 100 && shaderProperty && *(uintptr_t*)shaderProperty == REL::Relocation<uintptr_t>{ VTABLE::BSEffectShaderProperty[0] }.address() && obj->parent && *(uintptr_t*)obj->parent == REL::Relocation<uintptr_t>{ VTABLE::NiBillboardNode[0] }.address()) {
+			std::string name{ obj->name.c_str() };
 			for (auto& c : name) {
 				c = tolower(c);
 			}
 			if (vertexCount > 40 && name.find("beam") != std::string::npos) {
 				obj->name = "_LaserBeam";
-			}
-			else if (name.find("dot") != std::string::npos) {
+			} else if (name.find("dot") != std::string::npos) {
 				obj->name = "_LaserDot";
-			}
-			else {
+			} else {
 				marked = true;
 				obj->name = "_Scanned";
 			}
@@ -127,7 +122,8 @@ bool TryFindingLaserSight(NiAVObject* root) {
 	return found;
 }
 
-void AdjustLaserSight(Actor* a, NiNode* root, const NiPoint3& gunDir, const NiPoint3& laserPos, const NiPoint3& laserNormal, const NiPoint3& fpOffset) {
+void AdjustLaserSight(Actor* a, NiNode* root, const NiPoint3& gunDir, const NiPoint3& laserPos, const NiPoint3& laserNormal, const NiPoint3& fpOffset)
+{
 	if (root) {
 		float actorScale = GetActorScale(a);
 		InterlockedIncrement((volatile long*)((uintptr_t)a->Get3D() + 0x138));
@@ -179,10 +175,9 @@ void AdjustLaserSight(Actor* a, NiNode* root, const NiPoint3& gunDir, const NiPo
 	}
 }
 
-void AdjustPlayerBeam() {
-	if (pcam->currentState == pcam->cameraStates[CameraState::k3rdPerson]
-		|| pcam->currentState == pcam->cameraStates[CameraState::kFirstPerson]
-		|| pcam->currentState == pcam->cameraStates[CameraState::kFree]) {
+void AdjustPlayerBeam()
+{
+	if (pcam->currentState == pcam->cameraStates[CameraState::k3rdPerson] || pcam->currentState == pcam->cameraStates[CameraState::kFirstPerson] || pcam->currentState == pcam->cameraStates[CameraState::kFree]) {
 		if (p->Get3D() && p->currentProcess && p->currentProcess->middleHigh) {
 			BSTArray<EquippedItem> equipped = p->currentProcess->middleHigh->equippedItems;
 			if (equipped.size() != 0 && equipped[0].item.instanceData) {
@@ -220,15 +215,14 @@ void AdjustPlayerBeam() {
 							dir = camDir;
 							newPos = pcam->cameraRoot->world.translate + dir * 25.f;
 							gunAimDiffThreshold = gunAimDiffThreshold1st;
-						}
-						else if (pcam->currentState == pcam->cameraStates[CameraState::kFree]) {
+						} else if (pcam->currentState == pcam->cameraStates[CameraState::kFree]) {
 							dir = gunDir;
 							camDir = gunDir;
 						}
 
 						float camFovThreshold = 0.85f;
 						float gunAimDiff = acos(DotProduct(camDir, gunDir));
-						if (p->weaponState == WEAPON_STATE::kDrawing || (p->moveMode & 0x100) == 0x100 || (p->gunState >= 1 && p->gunState <= 4) || gunAimDiff > gunAimDiffThreshold) {
+						if (F4::AnimationSystemUtils::WillEventChangeState(*p, "attackStart") == false || (p->moveMode & 0x100) == 0x100 || (p->gunState >= 1 && p->gunState <= 4) || gunAimDiff > gunAimDiffThreshold) {
 							dir = gunDir;
 						}
 
@@ -236,21 +230,15 @@ void AdjustPlayerBeam() {
 						bhkNPCollisionObject* nodeHit = GetPickData(newPos, newPos + dir * 10000.f, p, projForm, pick);
 						NiPoint3 laserNormal = dir * -1.f;
 						NiPoint3 laserPos;
-						float actorScale = GetActorScale(p);
 						if (pick.HasHit()) {
 							/*hknpCollisionResult res;
 							pick.GetAllCollectorRayHitAt(0, res);
 							laserNormal = Normalize(res.normal);
 							laserPos = res.position / *ptr_fBS2HkScale + laserNormal * 2.f;*/
-							laserNormal = NiPoint3(*(float*)((uintptr_t)&pick + 0x70)
-												   , *(float*)((uintptr_t)&pick + 0x74)
-												   , *(float*)((uintptr_t)&pick + 0x78));
-							laserPos = NiPoint3(*(float*)((uintptr_t)&pick + 0x60)
-												, *(float*)((uintptr_t)&pick + 0x64)
-												, *(float*)((uintptr_t)&pick + 0x68)) / *ptr_fBS2HkScale + laserNormal * 2.f;
-						}
-						else {
-							laserPos = p->bulletAutoAim + laserNormal * 2.f;
+							laserNormal = NiPoint3(*(float*)((uintptr_t)&pick + 0x70), *(float*)((uintptr_t)&pick + 0x74), *(float*)((uintptr_t)&pick + 0x78));
+							laserPos = NiPoint3(*(float*)((uintptr_t)&pick + 0x60), *(float*)((uintptr_t)&pick + 0x64), *(float*)((uintptr_t)&pick + 0x68)) / *ptr_fBS2HkScale + laserNormal * 2.f;
+						} else {
+							laserPos = newPos + dir * 10000.f + laserNormal * 2.f;
 						}
 						//_MESSAGE("autoaim %f %f %f", p->bulletAutoAim.x, p->bulletAutoAim.y, p->bulletAutoAim.z);
 						//_MESSAGE("laserPos %f %f %f", laserPos.x, laserPos.y, laserPos.z);
@@ -263,7 +251,8 @@ void AdjustPlayerBeam() {
 	}
 }
 
-void AdjustNPCBeam(Actor* a) {
+void AdjustNPCBeam(Actor* a)
+{
 	if (a->currentProcess && a->currentProcess->middleHigh) {
 		BSTArray<EquippedItem> equipped = a->currentProcess->middleHigh->equippedItems;
 		if (equipped.size() != 0 && equipped[0].item.instanceData) {
@@ -295,32 +284,33 @@ void AdjustNPCBeam(Actor* a) {
 					float gunAimDiffThreshold = gunAimDiffThreshold3rd;
 
 					float gunAimDiff = acos(DotProduct(dir, gunDir));
-					if (a->weaponState == WEAPON_STATE::kDrawing || (a->moveMode & 0x100) == 0x100 || (p->gunState >= 1 && p->gunState <= 4) || gunAimDiff > gunAimDiffThreshold) {
+					if (F4::AnimationSystemUtils::WillEventChangeState(*a, "attackStart") == false || (a->moveMode & 0x100) == 0x100 || (a->gunState >= 1 && a->gunState <= 4) || gunAimDiff > gunAimDiffThreshold) {
 						dir = gunDir;
 					}
 
 					F4::bhkPickData pick = F4::bhkPickData();
-					bhkNPCollisionObject* nodeHit = GetPickData(newPos, newPos + dir * 10000.f, p, projForm, pick);
+					bhkNPCollisionObject* nodeHit = GetPickData(newPos, newPos + dir * 10000.f, a, projForm, pick);
+					NiPoint3 laserNormal = dir * -1.f;
+					NiPoint3 laserPos;
 					if (pick.HasHit()) {
 						/*hknpCollisionResult res;
 						pick.GetAllCollectorRayHitAt(0, res);
 						NiPoint3 laserNormal = res.normal;
 						NiPoint3 laserPos = res.position / *ptr_fBS2HkScale + laserNormal * 2.f;*/
-						NiPoint3 laserNormal = NiPoint3(*(float*)((uintptr_t)&pick + 0x70)
-											   , *(float*)((uintptr_t)&pick + 0x74)
-											   , *(float*)((uintptr_t)&pick + 0x78));
-						NiPoint3 laserPos = NiPoint3(*(float*)((uintptr_t)&pick + 0x60)
-											, *(float*)((uintptr_t)&pick + 0x64)
-											, *(float*)((uintptr_t)&pick + 0x68)) / *ptr_fBS2HkScale + laserNormal * 2.f;
-						AdjustLaserSight(a, weapon, gunDir, laserPos, laserNormal, NiPoint3());
+						laserNormal = NiPoint3(*(float*)((uintptr_t)&pick + 0x70), *(float*)((uintptr_t)&pick + 0x74), *(float*)((uintptr_t)&pick + 0x78));
+						laserPos = NiPoint3(*(float*)((uintptr_t)&pick + 0x60), *(float*)((uintptr_t)&pick + 0x64), *(float*)((uintptr_t)&pick + 0x68)) / *ptr_fBS2HkScale + laserNormal * 2.f;
+					} else {
+						laserPos = newPos + dir * 10000.f + laserNormal * 2.f;
 					}
+					AdjustLaserSight(a, weapon, gunDir, laserPos, laserNormal, NiPoint3());
 				}
 			}
 		}
 	}
 }
 
-void HookedUpdate() {
+void HookedUpdate()
+{
 	BSTArray<ActorHandle>* highActorHandles = (BSTArray<ActorHandle>*)(F4::ptr_processLists.address() + 0x40);
 	if (highActorHandles->size() > 0) {
 		for (auto it = highActorHandles->begin(); it != highActorHandles->end(); ++it) {
@@ -332,14 +322,15 @@ void HookedUpdate() {
 		}
 	}
 	AdjustPlayerBeam();
-	
-	typedef void (* FnUpdate)();
+
+	typedef void (*FnUpdate)();
 	FnUpdate fn = (FnUpdate)PCUpdateMainThreadOrig;
 	if (fn)
 		(*fn)();
 }
 
-void InitializePlugin() {
+void InitializePlugin()
+{
 	p = PlayerCharacter::GetSingleton();
 	pcam = PlayerCamera::GetSingleton();
 }
