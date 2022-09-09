@@ -175,6 +175,11 @@ void AdjustLaserSight(Actor* a, NiNode* root, const NiPoint3& gunDir, const NiPo
 	}
 }
 
+bool ShouldNotAdjustLaser(Actor* a, float gunAimDiff, float gunAimDiffThreshold)
+{
+	return ((!F4::AnimationSystemUtils::WillEventChangeState(*a, "attackStart") && !F4::AnimationSystemUtils::WillEventChangeState(*a, "reloadStart")) || a->DoGetSprinting() || (a->gunState >= 1 && a->gunState <= 4) || gunAimDiff > gunAimDiffThreshold);
+}
+
 void AdjustPlayerBeam()
 {
 	if (pcam->currentState == pcam->cameraStates[CameraState::k3rdPerson] || pcam->currentState == pcam->cameraStates[CameraState::kFirstPerson] || pcam->currentState == pcam->cameraStates[CameraState::kFree]) {
@@ -222,7 +227,7 @@ void AdjustPlayerBeam()
 
 						float camFovThreshold = 0.85f;
 						float gunAimDiff = acos(DotProduct(camDir, gunDir));
-						if (F4::AnimationSystemUtils::WillEventChangeState(*p, "attackStart") == false || (p->moveMode & 0x100) == 0x100 || (p->gunState >= 1 && p->gunState <= 4) || gunAimDiff > gunAimDiffThreshold) {
+						if (ShouldNotAdjustLaser(p, gunAimDiff, gunAimDiffThreshold)) {
 							dir = gunDir;
 						}
 
@@ -284,7 +289,7 @@ void AdjustNPCBeam(Actor* a)
 					float gunAimDiffThreshold = gunAimDiffThreshold3rd;
 
 					float gunAimDiff = acos(DotProduct(dir, gunDir));
-					if (F4::AnimationSystemUtils::WillEventChangeState(*a, "attackStart") == false || (a->moveMode & 0x100) == 0x100 || (a->gunState >= 1 && a->gunState <= 4) || gunAimDiff > gunAimDiffThreshold) {
+					if (ShouldNotAdjustLaser(a, gunAimDiff, gunAimDiffThreshold)) {
 						dir = gunDir;
 					}
 
