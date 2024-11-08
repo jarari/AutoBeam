@@ -58,6 +58,7 @@ bool TryFindingLaserSight(NiAVObject* root)
 		return false;*/
 
 	bool marked = false;
+	InterlockedIncrement((volatile long*)((uintptr_t)root + 0x138));
 	NiNode* markingParent = root->IsNode();
 	Visit(root, [&marked, &markingParent](NiAVObject* obj) {
 		if ((obj->flags.flags & 0x1) == 0x1)
@@ -96,6 +97,7 @@ bool TryFindingLaserSight(NiAVObject* root)
 		node->local.translate = NiPoint3();
 		node->local.rotate.MakeIdentity();
 	}*/
+	InterlockedDecrement((volatile long*)((uintptr_t)root + 0x138));
 
 	return found;
 }
@@ -104,7 +106,7 @@ void AdjustLaserSight(Actor* a, NiNode* root, const NiPoint3& gunDir, const NiPo
 {
 	if (root) {
 		float actorScale = GetActorScale(a);
-		InterlockedIncrement((volatile long*)((uintptr_t)a->Get3D() + 0x138));
+		InterlockedIncrement((volatile long*)((uintptr_t)root + 0x138));
 		Visit(root, [&](NiAVObject* obj) {
 			if (obj->refCount == 0 || (obj->flags.flags & 0x1) == 0x1 || !obj->IsTriShape())
 				return false;
@@ -155,7 +157,7 @@ void AdjustLaserSight(Actor* a, NiNode* root, const NiPoint3& gunDir, const NiPo
 			}
 			return false;
 		});
-		InterlockedDecrement((volatile long*)((uintptr_t)a->Get3D() + 0x138));
+		InterlockedDecrement((volatile long*)((uintptr_t)root + 0x138));
 	}
 }
 
@@ -187,10 +189,10 @@ void AdjustPlayerBeam()
 						}
 						bool firstPerson = p->Get3D(true) == p->Get3D();
 						NiPoint3 fpOffset;
-						NiPoint3 newPos = projNode->world.translate;
-						NiPoint3 dir = Normalize(p->bulletAutoAim - newPos);
 						NiPoint3 gunDir = Normalize(ToUpVector(projNode->world.rotate));
 						NiPoint3 camDir = Normalize(ToUpVector(pcam->cameraRoot->world.rotate));
+						NiPoint3 newPos = projNode->world.translate - gunDir * 25.f;
+						NiPoint3 dir = Normalize(p->bulletAutoAim - newPos);
 						float gunAimDiffThreshold = gunAimDiffThreshold3rd;
 						if (firstPerson) {
 							NiNode* camera = (NiNode*)p->Get3D()->GetObjectByName("Camera");
@@ -222,6 +224,7 @@ void AdjustPlayerBeam()
 						float gunAimDiff = acos(DotProduct(camDir, gunDir));
 						if (ShouldNotAdjustLaser(p, gunAimDiff, gunAimDiffThreshold)) {
 							dir = gunDir;
+							newPos = projNode->world.translate + fpOffset - gunDir * 25.f;
 						} else {
 							sampledGunDirOffset.push_back(dir - gunDir);
 							if (sampledGunDirOffset.size() > sampleCount) {
@@ -359,6 +362,7 @@ bool HookedWeaponSheathe(void* handler, Actor* a, BSFixedString* str)
 {
 	NiAVObject* root = a->Get3D();
 	if (root) {
+		InterlockedIncrement((volatile long*)((uintptr_t)root + 0x138));
 		Visit(root, [](NiAVObject* obj) {
 			if (obj->refCount == 0 || (obj->flags.flags & 0x1) == 0x1 || !obj->IsTriShape() || obj->name.length() == 0)
 				return false;
@@ -377,6 +381,7 @@ bool HookedWeaponSheathe(void* handler, Actor* a, BSFixedString* str)
 			}
 			return false;
 		});
+		InterlockedDecrement((volatile long*)((uintptr_t)root + 0x138));
 	}
 	using func_t = decltype(&HookedWeaponSheathe);
 	return ((func_t)WeaponeSheatheOrig)(handler, a, str);
